@@ -1,0 +1,244 @@
+---
+title: "v2"
+author: "Qiqi Zhang"
+output: 
+   word_document:
+    reference_docx: "./Output/Misc/word_temp_rmd.docx"
+    toc: F
+    toc_depth: 4
+    number_sections: true
+theme: journal
+knit: (function(input, ...) {
+  rmarkdown::render(input, 
+  output_file = paste0("Report_pub_v2_",format(Sys.Date(), '%Y%m%d'),".docx"),
+  output_dir = "./Output")})
+    
+editor_options: 
+  chunk_output_type: console
+---
+```{r Setup, include=FALSE }
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(gtsummary)
+library(modelsummary)
+library(gt)
+library(flextable)
+library(ggplot2)
+library(lattice)
+library(gdata)
+library(xlsx)
+library(stringr)
+require(elrm) # for exact logistic regression
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = FALSE, comment = NA, include=FALSE, ft.keepnext = F) 
+source_lines <- function(file, lines){
+    source(textConnection(readLines(file, warn=F)[lines]), local = knitr::knit_global())
+}
+# Functions
+lu = function(x){length(unique(x))}
+func <- function(x) c(summary(x), sd(x), var(x))
+table1 <- function (..., useNA = 'ifany') base::table(..., useNA = useNA)
+fun_tb = function(df, rowvar, rowlab, margin = NULL){
+  df %>% 
+    tbl_cross(row = {{rowvar}}, col = pd2_f, percent = "column", margin = margin, digits=c(0,1), 
+              label = list({{rowvar}} ~ rowlab, pd2_f ~ "PD diagnosis")) %>%
+    bold_labels() %>% as_flex_table() 
+}
+
+```
+
+```{r Read Data}
+source("./Brief_report_v2.R", local = knitr::knit_global())
+```
+
+```{r gender table}
+table(aed_pd_df_2$gender)
+tb_gender = fun_tb(df = aed_pd_df_2, rowvar = "gender", rowlab = "gender")
+tb_gender_data =  tb_gender$body$dataset
+```
+Of `r nrow(aed_pd_df_2)` individuals included in the data set, `r length(which(aed_pd_df_2$pd2==1))` PD cases and `r length(which(aed_pd_df_2$pd2==0))` controls were identified. There were `r aed_pd_df_0 %>% filter(epildrugdate_e_new>=date_PD_dummy_2 & epildrug_Drug=="Exposed") %>% nrow()` participants with a first AED prescription after PD diagnosis, whom were treated as "Non-exposures" in the analyses. The PD group comprised `r tb_gender_data %>% filter(label =="Female") %>% select(stat_1)` women and `r tb_gender_data %>% filter(label =="Male") %>% select(stat_1)` men, and the control group included `r tb_gender_data %>% filter(label =="Female") %>% select(stat_2)` women and `r tb_gender_data %>% filter(label =="Male") %>% select(stat_2)` men (*Table 1*).
+
+```{r Table 1, include=T}
+aed_pd_df_2 %>% 
+  select(pd2_f, age, gender, ethnic, imd_quintile, AED_Drug_PD, epilepsy) %>% 
+  tbl_summary(
+    by = pd2_f,   
+    statistic = list( all_continuous() ~ "{mean} ({sd})",all_categorical() ~ "{n} ({p}%)"),
+    digits = list(all_continuous() ~ c(0,1), all_categorical() ~ c(0, 1)) ,
+    label = list(age ~ "Age, mean (SD), yr", gender ~ "Gender", ethnic ~ "Ethnicity", 
+                 imd_quintile ~ "IMD", AED_Drug_PD~"AED prescription", epilepsy ~ "Epilepsy")
+    ) %>%
+  modify_header(all_stat_cols() ~ "**{level}**<br>N = {n}") %>% 
+  modify_caption("Table 1. Demographic Information on PD Cases and Matched Controls in East London Primary Care Data") %>% 
+  modify_footnote(all_stat_cols() ~ NA) %>% 
+  as_flex_table()
+```
+
+## Association of AED prescription and subsequent PD {-}
+```{r Analyses}
+gm <- tibble::tribble( ~raw, ~clean, ~fmt,"nobs", "N", 0)
+
+lm_un  = glm(pd2 ~ AED_Drug_PD, aed_pd_df_2, family = "binomial")
+lm_adj = glm(pd2 ~ AED_Drug_PD + gender + age2 + imd_quintile + ethnic + epilepsy, aed_pd_df_2, family = "binomial")
+# TEST INTERACTION
+lm.int.1 = glm(pd2 ~ AED_Drug_PD + ethnic*AED_Drug_PD  + AED_Drug_PD, aed_pd_df_2, family = "binomial")
+summary (lm.int.1)
+
+
+lm_un_0to2yr  = glm(pd2 ~ AED_Drug_PD, aed_pd_df_0to2yr, family = "binomial")
+lm_adj_0to2yr = glm(pd2 ~ AED_Drug_PD + gender + age2 + imd_quintile + ethnic + epilepsy, aed_pd_df_0to2yr, family = "binomial")
+
+lm_un_2to5yr  = glm(pd2 ~ AED_Drug_PD, aed_pd_df_2to5yr, family = "binomial")
+lm_adj_2to5yr = glm(pd2 ~ AED_Drug_PD + gender + age2 + imd_quintile + ethnic + epilepsy, aed_pd_df_2to5yr, family = "binomial")
+
+table(aed_pd_df_2to5yr$pd2_f, aed_pd_df_2to5yr$AED_Drug_PD)
+table(aed_pd_df_2to5yr$pd2_f, aed_pd_df_2to5yr$AED_interval)
+
+lm_un_5to10yr  = glm(pd2 ~ AED_Drug_PD, aed_pd_df_5to10yr, family = "binomial")
+lm_adj_5to10yr = glm(pd2 ~ AED_Drug_PD + gender + age2 + imd_quintile + ethnic + epilepsy, aed_pd_df_5to10yr, family = "binomial")
+
+lm_un_over10yr  = glm(pd2 ~ AED_Drug_PD, aed_pd_df_over10yr, family = "binomial")
+lm_adj_over10yr = glm(pd2 ~ AED_Drug_PD + gender + age2 + imd_quintile + ethnic + epilepsy, aed_pd_df_over10yr, family = "binomial")
+
+# models_1 = list("Unadjusted" = lm_un, "Adjusted" = lm_adj)
+
+# modelsummary(models_1, exponentiate = T, stars=TRUE,
+#              estimate = "{estimate} {stars} ({conf.low}, {conf.high})", statistic=NULL, shape = term ~ model,
+#              gof_map = gm, 
+#              coef_omit = c(-2), coef_rename =c("AED_Drug_PD" = "AED prescription"),
+#              fmt = 2,
+#              notes = "+ p < 0.1, * p < 0.05, ** p < 0.01, *** p < 0.001")
+
+
+
+# models_2 = list("Unadjusted" = lm_un_2yr, "Adjusted" = lm_adj_2yr)
+
+# modelsummary(models_2, exponentiate = T, statistic=NULL, stars=TRUE,
+#              estimate = "{estimate} ({conf.low}, {conf.high})",  shape = term ~ model ,
+#              gof_map = gm, coef_omit = c(-2), coef_rename =c("AED_Drug_PD" = "AED prescription"),
+#              fmt = 2)
+
+ORs = cbind(
+  exp(coef(lm_un)["AED_Drug_PDExposed"]),
+  exp(coef(lm_adj)["AED_Drug_PDExposed"]),
+  exp(coef(lm_un_0to2yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_adj_0to2yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_un_2to5yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_adj_2to5yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_un_5to10yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_adj_5to10yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_un_over10yr)["AED_Drug_PDExposed"]),
+  exp(coef(lm_adj_over10yr)["AED_Drug_PDExposed"])
+)
+
+tt = list("Unadjusted" =lm_un, "Adjusted" = lm_adj,
+          "Unadjusted" =lm_un_0to2yr,"Adjusted" = lm_adj_0to2yr,
+          "Unadjusted" =lm_un_2to5yr,"Adjusted" = lm_adj_2to5yr,
+          "Unadjusted" =lm_un_5to10yr,"Adjusted" = lm_adj_5to10yr,
+          "Unadjusted" =lm_un_over10yr,"Adjusted" = lm_adj_over10yr)
+options(scipen=999)
+
+tb2 = modelsummary(tt, output = "flextable", exponentiate = T, stars=TRUE, fmt = 2, 
+             statistic= "({conf.low}, {conf.high})", 
+             estimate = "{estimate} {stars}", 
+             shape = term + statistic ~ model,
+             gof_map  = gm,
+             coef_omit = c(-2), 
+             coef_rename =c("AED_Drug_PD" = "AED prescription"),
+             notes = "+ p < 0.1, * p < 0.05, ** p < 0.01, *** p < 0.001") %>% 
+  width( width = 1) 
+  
+
+```
+
+\newpage
+
+```{r Table 2, include=T}
+tb2 %>%
+  add_header_row(values = c("","Main analyses", "<2yr","2 to 5yr", "5 to 10yr", "Over 10yr" ),
+                 colwidths = c(1,2,2,2,2,2), top = TRUE) %>%
+  set_caption("Table 2. ORs of the Association Between AEDs Prescription and PD") %>% 
+  knit_print()
+```
+
+```{r P for trend}
+# aed_pd_df_2 = within(aed_pd_df_2, AED_interval_order <- ordered(AED_interval))
+# lm_trend_un  = glm(pd2 ~ AED_interval_order, aed_pd_df_2, family = "binomial")
+# summary(lm_trend_un)
+# 
+# library(DescTools)
+# CochranArmitageTest(table(aed_pd_df_2$AED_interval, aed_pd_df_2$pd2))
+
+```
+
+```{r AED terms with Epilepsy}
+AED_Epil_freq = addmargins(table(aed_pd_df_2$epildrug_e, aed_pd_df_2$epilepsy))
+AED_Epil_freq = AED_Epil_freq[order(AED_Epil_freq[,"Sum"],decreasing=TRUE), ]
+write.csv(AED_Epil_freq, "Output/Misc/AED_Epil_Freq_Matched_2.csv")
+
+```
+```{r Proportions, include=T}
+aed_pd_df_2 %>%
+  group_by(pd2_f,AED_Drug_PD) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+table(aed_pd_df_2$pd2_f)
+prop.table(table(aed_pd_df_2$pd2_f))
+
+aed_pd_df_0to2yr %>%
+  group_by(pd2_f,AED_Drug_PD) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+prop.table(table(aed_pd_df_0to2yr$pd2_f))
+table(aed_pd_df_0to2yr$pd2_f)
+addmargins(table(aed_pd_df_0to2yr$pd2_f, aed_pd_df_0to2yr$AED_Drug_PD))
+
+aed_pd_df_2to5yr %>%
+  group_by(pd2_f,AED_Drug_PD) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+prop.table(table(aed_pd_df_2to5yr$pd2_f))
+addmargins(table(aed_pd_df_2to5yr$pd2_f, aed_pd_df_2to5yr$AED_Drug_PD))
+
+aed_pd_df_5to10yr %>%
+  group_by(pd2_f,AED_Drug_PD) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+prop.table(table(aed_pd_df_5to10yr$pd2_f))
+addmargins(table(aed_pd_df_5to10yr$pd2_f, aed_pd_df_5to10yr$AED_Drug_PD))
+
+aed_pd_df_over10yr %>%
+  group_by(pd2_f,AED_Drug_PD) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n))
+prop.table(table(aed_pd_df_over10yr$pd2_f))
+addmargins(table(aed_pd_df_over10yr$pd2_f, aed_pd_df_over10yr$AED_Drug_PD))
+```
+
+
+```{r Test for different years before diagnosis}
+
+aed_pd_df_3 = aed_pd_df_2 %>% 
+  mutate(AED_PD_diff_yr = case_when(x>0~ x/365.25,
+                                    TRUE ~ 0)) 
+
+summary(aed_pd_df_3$AED_PD_diff_yr)
+
+lm_un_x = glm(pd2 ~   AED_PD_diff_yr, aed_pd_df_3, family = "binomial")
+summary(lm_un_x)
+exp(coef(lm_un_x))["AED_PD_diff_yr"]
+exp(confint.default(lm_un_x)["AED_PD_diff_yr",])
+
+lm_adj_x = glm(pd2 ~   gender + age2 + imd_quintile + ethnic + epilepsy + AED_PD_diff_yr, aed_pd_df_3, family = "binomial")
+summary(lm_adj_x)
+exp(coef(lm_adj_x))["AED_PD_diff_yr"]
+exp(confint.default(lm_adj_x)["AED_PD_diff_yr",])
+
+
+lm_interval = glm(pd2 ~   AED_interval, aed_pd_df_3, family = "binomial") # this is same as using separate dataset
+
+summary(aed_pd_df_3$x)
+
+```
+
